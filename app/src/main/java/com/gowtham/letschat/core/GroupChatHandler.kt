@@ -8,9 +8,7 @@ import com.gowtham.letschat.db.data.Group
 import com.gowtham.letschat.db.data.GroupMessage
 import com.gowtham.letschat.di.GroupCollection
 import com.gowtham.letschat.fragments.single_chat.toDataClass
-import com.gowtham.letschat.utils.LogMessage
 import com.gowtham.letschat.utils.MPreference
-import com.gowtham.letschat.utils.UserUtils
 import com.gowtham.letschat.utils.Utils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -33,137 +31,135 @@ class GroupChatHandler @Inject constructor(
 
     private var userId = preference.getUid()
 
-    private lateinit var messageCollectionGroup: Query
+    private val groupMsgListeners = HashMap<String, ListenerRegistration>()
 
-    private val messagesList = mutableListOf<GroupMessage>()
-
-    private val listOfGroup = ArrayList<String>()
-
-    private var isFirstQuery = false
+    init {
+        instance = this
+    }
 
     companion object {
-        private var groupListener: ListenerRegistration? = null
         private var myProfileListener: ListenerRegistration? = null
         private var instanceCreated = false
+        private var instance: GroupChatHandler? = null
 
         fun removeListener() {
             instanceCreated = false
-            groupListener?.remove()
             myProfileListener?.remove()
+            myProfileListener = null
+            instance?.clearGroupMsgListeners()
         }
     }
 
     fun initHandler() {
         if (instanceCreated)
             return
-        else
-            instanceCreated = true
+        instanceCreated = true
         userId = preference.getUid()
         Timber.v("GroupChatHandler init")
         preference.clearCurrentGroup()
-        messageCollectionGroup = UserUtils.getGroupMsgSubCollectionRef()
         addGroupsSnapShotListener()
-        addGroupMsgListener()
     }
 
-    private fun addGroupMsgListener() {
-        try {
-            groupListener = messageCollectionGroup.whereArrayContains("to", userId!!)
-                .addSnapshotListener { snapshots, error ->
-                    if (error != null || snapshots == null || snapshots.metadata.isFromCache) {
-                        LogMessage.v("Error ${error?.localizedMessage}")
-                        return@addSnapshotListener
-                    }
-                    messagesList.clear()
-                    listOfGroup.clear()
+    private fun clearGroupMsgListeners() {
+        groupMsgListeners.values.forEach { it.remove() }
+        groupMsgListeners.clear()
+    }
 
-                    onSnapShotChanged(snapshots)
+    private fun addGroupMsgListener(groupId: String) {
+        if (groupMsgListeners.containsKey(groupId) || userId.isNullOrEmpty()) return
 
-                    if (messagesList.isNotEmpty())
-                        updateGroupUnReadCount()
+        val listener = groupCollection.document(groupId).collection("group_messages")
+            .whereArrayContains("to", userId!!)
+            .addSnapshotListener { snapshots, error ->
+                if (error != null) {
+                    Timber.e("GroupChatHandler listener error for $groupId: ${error.localizedMessage}")
+                    return@addSnapshotListener
                 }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
 
+                if (snapshots == null || snapshots.isEmpty) return@addSnapshotListener
+
+                val newMessages = mutableListOf<GroupMessage>()
+                var hasNewMessage = false
+                for (shot in snapshots.documentChanges) {
+                    if (shot.type == DocumentChange.Type.ADDED ||
+                        shot.type == DocumentChange.Type.MODIFIED
+                    ) {
+                        try {
+                            val message = shot.document.data.toDataClass<GroupMessage>()
+                            newMessages.add(message)
+                            if (shot.type == DocumentChange.Type.ADDED && message.from != userId) {
+                                hasNewMessage = true
+                            }
+                        } catch (e: Exception) {
+                            Timber.e("Error parsing group message change: ${e.message}")
+                        }
+                    }
+                }
+
+                if (newMessages.isNotEmpty()) {
+                    processIncomingMessages(newMessages, groupId, hasNewMessage)
+                }
+            }
+        groupMsgListeners[groupId] = listener
     }
 
-    private fun onSnapShotChanged(snapshots: QuerySnapshot) {
-        if(isFirstQuery){
-            snapshots.forEach { doc->
-                val message = doc.data.toDataClass<GroupMessage>()
-                if (!listOfGroup.contains(message.groupId))
-                    listOfGroup.add(message.groupId)
-                messagesList.add(message)
-            }
-            isFirstQuery=false
-        }
-        else
-        for (shot in snapshots.documentChanges) {
-            if (shot.type == DocumentChange.Type.ADDED ||
-                shot.type == DocumentChange.Type.MODIFIED
-            ) {
-                val message = shot.document.data.toDataClass<GroupMessage>()
-                if (!listOfGroup.contains(message.groupId))
-                    listOfGroup.add(message.groupId)
-                messagesList.add(message)
-            }
-        }
-    }
-
-    private fun updateGroupUnReadCount() {
+    private fun processIncomingMessages(messages: List<GroupMessage>, groupId: String, showNotification: Boolean) {
         CoroutineScope(Dispatchers.IO).launch {
-            dbRepository.insertMultipleGroupMessage(messagesList)
+            dbRepository.insertMultipleGroupMessage(messages)
             val groupsWithMsgs = dbRepository.getGroupWithMessagesList()
-            messagesList.clear()
+            val currentOnlineGroupId = preference.getOnlineGroup()
+            
             for (groupWithMsg in groupsWithMsgs) {
-                val unreadCount = groupWithMsg.messages.filter {
-                    val myStatus = Utils.myMsgStatus(userId.toString(), it)
-                    it.from != userId &&
-                            it.groupId == groupWithMsg.group.id && myStatus < 3
-                }.size
-                groupWithMsg.group.unRead =
-                    if (preference.getOnlineGroup() == groupWithMsg.group.id) 0
-                    else unreadCount
-                messagesList.addAll(groupWithMsg.messages)
+                if (groupWithMsg.group.id == groupId || groupWithMsg.group.id == currentOnlineGroupId) {
+                    val unreadCount = groupWithMsg.messages.filter {
+                        val myStatus = Utils.myMsgStatus(userId!!, it)
+                        it.from != userId && it.groupId == groupWithMsg.group.id && myStatus < 3
+                    }.size
+                    groupWithMsg.group.unRead =
+                        if (currentOnlineGroupId == groupWithMsg.group.id) 0
+                        else unreadCount
+                }
             }
-            val groups = groupsWithMsgs.map {
-                it.group
+            val groupsToUpdate = groupsWithMsgs.map { it.group }
+            dbRepository.insertMultipleGroup(groupsToUpdate)
+            
+            // Notification and status update
+            if (showNotification) {
+                FirebasePush.showGroupNotification(context, dbRepository)
             }
-            dbRepository.insertMultipleGroup(groups)
-            changeMsgStatus(groups)
+
+            if (currentOnlineGroupId == groupId) {
+                groupMsgStatusUpdater.updateToSeen(userId!!, messages, groupId)
+            } else {
+                groupMsgStatusUpdater.updateToDelivery(userId!!, messages, groupId)
+            }
         }
-    }
-
-    private fun changeMsgStatus(groups: List<Group>) {
-        if (groups.isNotEmpty())
-            FirebasePush.showGroupNotification(context, dbRepository)
-        val currentOnlineGroupId=preference.getOnlineGroup()
-        if(currentOnlineGroupId.isNotEmpty()){
-            val currentGroupMsgs = messagesList.filter {
-                it.groupId == currentOnlineGroupId
-            }
-            val otherGroupMsgs = messagesList.filter {
-                it.groupId != currentOnlineGroupId
-            }
-            groupMsgStatusUpdater.updateToSeen(userId!!, currentGroupMsgs,currentOnlineGroupId)
-            groupMsgStatusUpdater.updateToDelivery(userId!!, otherGroupMsgs, *listOfGroup.toTypedArray())
-        }else
-            groupMsgStatusUpdater.updateToDelivery(userId!!, messagesList, *listOfGroup.toTypedArray())
-
     }
 
     private fun addGroupsSnapShotListener() {
+        if (userId.isNullOrEmpty()) return
+
         myProfileListener =
-            userCollection.document(userId.toString()).addSnapshotListener { snapshot, error ->
+            userCollection.document(userId!!).addSnapshotListener { snapshot, error ->
                 if (error == null) {
                     val groups = snapshot?.get("groups")
-                    val listOfGroup =
-                        if (groups == null) ArrayList() else groups as ArrayList<String>
+                    val currentGroups =
+                        if (groups == null) ArrayList<String>() else groups as ArrayList<String>
+                    
+                    // Remove listeners for groups we are no longer in
+                    val removedGroups = groupMsgListeners.keys.minus(currentGroups.toSet())
+                    for (id in removedGroups) {
+                        groupMsgListeners[id]?.remove()
+                        groupMsgListeners.remove(id)
+                    }
+
+                    for (groupId in currentGroups) {
+                        addGroupMsgListener(groupId)
+                    }
+
                     CoroutineScope(Dispatchers.IO).launch {
                         val alreadySavedGroup = dbRepository.getGroupList().map { it.id }
-                        val removedGroups = alreadySavedGroup.toSet().minus(listOfGroup.toSet())
-                        val newGroups = listOfGroup.toSet().minus(alreadySavedGroup.toSet())
+                        val newGroups = currentGroups.toSet().minus(alreadySavedGroup.toSet())
                         queryNewGroups(newGroups)
                     }
                 }

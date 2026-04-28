@@ -1,0 +1,29 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Matches any file or folder under /Users/{userId}
+    match /Users/{userId}/{allPaths=**} {
+      // Allow the owner to read and write anything in their own directory
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Specifically allow reading profile pictures by any authenticated user
+    match /Users/{userId}/{fileName} {
+      allow read: if request.auth != null && fileName.startsWith('profile_picture_');
+    }
+    
+    // Allow the recipient of a chat to read media sent by the sender
+    // Path: /Users/{senderId}/chats/{recipientId}/{fileName}
+    match /Users/{userId}/chats/{recipientId}/{fileName} {
+      allow read: if request.auth != null && request.auth.uid == recipientId;
+    }
+
+    // Group chat rules
+    match /group/{groupId}/{fileName} {
+       // Allow any authenticated user who is a member of the group to read/write
+       // Note: For production, you should ideally check group membership in Firestore
+       allow read, write: if request.auth != null;
+    }
+  }
+}

@@ -61,16 +61,15 @@ constructor(
             task.addOnSuccessListener {
                 child.downloadUrl.addOnCompleteListener { taskResult ->
                     progressProPic.value = false
-                    profilePicUrl.value = taskResult.result.toString()
-                }.addOnFailureListener {
-                    OnFailureListener { e ->
+                    if (taskResult.isSuccessful)
+                        profilePicUrl.value = taskResult.result.toString()
+                }.addOnFailureListener { e ->
                         progressProPic.value = false
                         context.toast(e.message.toString())
-                    }
                 }
-            }.addOnProgressListener { taskSnapshot ->
-                val progress: Double =
-                    100.0 * taskSnapshot.bytesTransferred / taskSnapshot.totalByteCount
+            }.addOnFailureListener { e ->
+                progressProPic.value = false
+                context.toast(e.message.toString())
             }
         } catch (e: Exception) {
             e.printStackTrace()

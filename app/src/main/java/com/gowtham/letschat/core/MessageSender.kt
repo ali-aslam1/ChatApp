@@ -20,6 +20,10 @@ class MessageSender(private val msgCollection: CollectionReference,
                     private val dbRepo: DbRepository, private val chatUser: ChatUser,
                     private val listener: OnMessageResponse) {
 
+    private val messageStatusUpdater: MessageStatusUpdater by lazy {
+        MessageStatusUpdater(msgCollection, com.google.firebase.firestore.FirebaseFirestore.getInstance())
+    }
+
     fun checkAndSend(fromUser: String, toUser: String, message: Message) {
         val docId = chatUser.documentId
         if (!docId.isNullOrEmpty()){
@@ -80,6 +84,10 @@ class MessageSender(private val msgCollection: CollectionReference,
                     ).addOnSuccessListener {
                         LogMessage.v("Message sender Sucesss ${message.createdAt}")
                         Timber.v("MessageSender: Message sent successfully")
+                        
+                        // Ensure Firestore status is explicitly set to 1 (Sent)
+                        messageStatusUpdater.updateToSent(listOf(message), doc)
+
                         message.chatUserId=chatUserId
                         listener.onSuccess(message)
                     }.addOnFailureListener {error ->

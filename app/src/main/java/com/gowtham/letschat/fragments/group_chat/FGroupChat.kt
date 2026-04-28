@@ -2,6 +2,7 @@ package com.gowtham.letschat.fragments.group_chat
 
 import android.Manifest
 import android.animation.Animator
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.media.MediaRecorder
@@ -21,7 +22,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.canhub.cropper.CropImage
 import com.gowtham.letschat.databinding.FGroupChatBinding
 import com.gowtham.letschat.db.daos.GroupDao
 import com.gowtham.letschat.db.data.*
@@ -179,14 +179,16 @@ class FGroupChat : Fragment(), ItemClickListener, CustomEditText.KeyBoardInputCa
         val groupSize = group.members!!.size
         val statusList = ArrayList<Int>()
         val deliveryTimeList = ArrayList<Long>()
+        val seenTimeList = ArrayList<Long>()
         for (index in 0 until groupSize) {
             statusList.add(0)
             deliveryTimeList.add(0L)
+            seenTimeList.add(0L)
         }
         return GroupMessage(
             System.currentTimeMillis(), group.id, from = localUserId,
             to = toUsers, fromUser.userName, fromUser.image, statusList, deliveryTimeList,
-            deliveryTimeList
+            seenTimeList
         )
     }
 
@@ -305,13 +307,18 @@ class FGroupChat : Fragment(), ItemClickListener, CustomEditText.KeyBoardInputCa
                 type = "image"
                 imageMessage = image
             }
-            viewModel.uploadToCloud(imageMsg, image.uri!!)
+            viewModel.uploadToCloud(imageMsg, contentUri.toString())
         }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        ImageUtils.cropImage(requireActivity(), data, true)
+        if (resultCode == Activity.RESULT_OK) {
+            when (requestCode) {
+                ImageUtils.CROP_IMAGE_ACTIVITY_REQUEST_CODE -> onCropResult(data)
+                ImageUtils.FROM_GALLERY, ImageUtils.TAKE_PHOTO -> ImageUtils.cropImage(requireActivity(), data, true)
+            }
+        }
     }
 
     private fun onCropResult(data: Intent?) {
@@ -345,10 +352,10 @@ class FGroupChat : Fragment(), ItemClickListener, CustomEditText.KeyBoardInputCa
     fun onAttachmentItemClicked(event: BottomSheetEvent) {
         when (event.position) {
             0 -> {
-                ImageUtils.takePhoto(requireActivity())
+                ImageUtils.takePhoto(this)
             }
             1 -> {
-                ImageUtils.chooseGallery(requireActivity())
+                ImageUtils.chooseGallery(this)
             }
             2 -> {
                 //create intent for gallery video

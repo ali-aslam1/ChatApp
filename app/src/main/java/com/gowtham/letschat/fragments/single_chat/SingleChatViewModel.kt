@@ -6,10 +6,7 @@ import android.os.Looper
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.Data
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.WorkRequest
+import androidx.work.*
 import com.google.firebase.database.*
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.FirebaseFirestore
@@ -27,6 +24,7 @@ import com.gowtham.letschat.services.UploadWorker
 import com.gowtham.letschat.utils.Constants.CHAT_USER_DATA
 import com.gowtham.letschat.utils.Constants.MESSAGE_DATA
 import com.gowtham.letschat.utils.Constants.MESSAGE_FILE_URI
+import com.gowtham.letschat.utils.Constants.CHAT_ID
 import com.gowtham.letschat.utils.LogMessage
 import com.gowtham.letschat.utils.MPreference
 import com.gowtham.letschat.utils.UserUtils
@@ -39,6 +37,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import timber.log.Timber
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlin.reflect.full.memberProperties
 
@@ -251,14 +251,33 @@ constructor(
                 .putString(MESSAGE_FILE_URI, fileUri)
                 .putString(MESSAGE_DATA, messageData)
                 .putString(CHAT_USER_DATA, chatUserData)
+                .putString(CHAT_ID, chatUser.documentId ?: "")
                 .build()
-            val uploadWorkRequest: WorkRequest =
+
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+
+            val uploadWorkRequest: OneTimeWorkRequest =
                 OneTimeWorkRequestBuilder<UploadWorker>()
                     .setInputData(data)
+                    .setConstraints(constraints)
+                    .setBackoffCriteria(
+                        BackoffPolicy.EXPONENTIAL,
+                        WorkRequest.MIN_BACKOFF_MILLIS,
+                        TimeUnit.MILLISECONDS
+                    )
                     .build()
-            WorkManager.getInstance(context).enqueue(uploadWorkRequest)
+
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "upload_${message.createdAt}",
+                ExistingWorkPolicy.REPLACE,
+                uploadWorkRequest
+            )
+            
+            Timber.d("Enqueued upload work for message: ${message.createdAt}")
         } catch (e: Exception) {
-            e.printStackTrace()
+            Timber.e(e, "Failed to enqueue upload work")
         }
     }
 }

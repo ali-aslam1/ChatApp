@@ -70,34 +70,38 @@ object ImageUtils {
         builder.addListener(object : SheetListener {
             override fun selectedItem(index: Int) {
                 if (index == 0)
-                    takePhoto(context.requireActivity())
+                    takePhoto(context)
                 else
-                    chooseGallery(context.requireActivity())
+                    chooseGallery(context)
             }
         },)
         builder.show(context.childFragmentManager, "")
     }
 
-    public fun chooseGallery(activity: Activity) {
+    fun chooseGallery(context: Any) {
         try {
             val intent = Intent(Intent.ACTION_PICK)
             intent.setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
-            activity.startActivityForResult(intent, FROM_GALLERY)
+            if (context is Activity)
+                context.startActivityForResult(intent, FROM_GALLERY)
+            else if (context is Fragment)
+                context.startActivityForResult(intent, FROM_GALLERY)
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    public fun takePhoto(activity: Activity) {
+    fun takePhoto(context: Any) {
         val fileName = "Snap_" + System.currentTimeMillis() / 1000 + ".jpg"
-        openCameraIntent(activity, MediaStore.ACTION_IMAGE_CAPTURE, fileName, TAKE_PHOTO)
+        openCameraIntent(context, MediaStore.ACTION_IMAGE_CAPTURE, fileName, TAKE_PHOTO)
     }
 
     private fun openCameraIntent(
-        activity: Activity,
+        context: Any,
         action: String,
         fileName: String,
         reqCode: Int) {
+        val activity = if (context is Activity) context else (context as Fragment).requireActivity()
         try {
             val intent = Intent(action)
             if (intent.resolveActivity(activity.packageManager) != null) {
@@ -108,7 +112,12 @@ object ImageUtils {
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                 intent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
-                activity.startActivityForResult(intent, reqCode)
+
+                if (context is Activity)
+                    context.startActivityForResult(intent, reqCode)
+                else if (context is Fragment)
+                    context.startActivityForResult(intent, reqCode)
+
                 activity.overridePendingTransition(
                     android.R.anim.fade_in,
                     android.R.anim.fade_out
@@ -120,7 +129,7 @@ object ImageUtils {
         }
     }
 
-    fun cropImage(activity: Activity, data: Intent?, squareCrop: Boolean = true) {
+    fun cropImage(context: Any, data: Intent?, squareCrop: Boolean = true) {
         val imgUri: Uri? = getPhotoUri(data)
         imgUri?.let {
             val options = CropImageOptions().apply {
@@ -132,15 +141,20 @@ object ImageUtils {
                     fixAspectRatio = true
                 }
             }
-            activity.startActivityForResult(
-                Intent(activity, com.canhub.cropper.CropImageActivity::class.java).apply {
-                    putExtra(CropImage.CROP_IMAGE_EXTRA_BUNDLE, Bundle().apply {
-                        putParcelable(CropImage.CROP_IMAGE_EXTRA_SOURCE, it)
-                        putParcelable(CropImage.CROP_IMAGE_EXTRA_OPTIONS, options)
-                    })
-                },
-                CROP_IMAGE_ACTIVITY_REQUEST_CODE
-            )
+            val intent = Intent(
+                if (context is Activity) context else (context as Fragment).requireContext(),
+                com.canhub.cropper.CropImageActivity::class.java
+            ).apply {
+                putExtra(CropImage.CROP_IMAGE_EXTRA_BUNDLE, Bundle().apply {
+                    putParcelable(CropImage.CROP_IMAGE_EXTRA_SOURCE, it)
+                    putParcelable(CropImage.CROP_IMAGE_EXTRA_OPTIONS, options)
+                })
+            }
+            if (context is Activity)
+                context.startActivityForResult(intent, CROP_IMAGE_ACTIVITY_REQUEST_CODE)
+            else if (context is Fragment)
+                context.startActivityForResult(intent, CROP_IMAGE_ACTIVITY_REQUEST_CODE)
+
             // Clear photoUri so it doesn't trigger recursion later
             if (imgUri == photoUri) photoUri = null
         }

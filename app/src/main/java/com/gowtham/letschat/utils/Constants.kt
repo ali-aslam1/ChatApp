@@ -30,5 +30,13 @@ object Constants {
 
     const val MESSAGE_FILE_URI="message_file_uri"
 
-    const val FCM_SERVER_KEY="AAAApjZeY_U:APA91bG5Ifs2wIABgd1edHXKvXaRm1yG7bUj3A0VY8TBvF00i-l7yQw82FF10dkhUj56uAC_fZHVqN5_h4IIGQ21Jpiyj_uszjG8Lez1aOSX0YF-Nhp1qDt_CcAIBv64uHubsLkmudVF"
+    const val CHAT_ID = "chat_id"
+
+    // FCM V1 Details
+    const val FCM_PROJECT_ID = "mobile-41ff6"
+
+    const val FCM_SENDER_ID = "189386356632"
+
+    // Filename of the Service Account JSON in the assets folder
+    const val SERVICE_ACCOUNT_FILE = "service-account.json"
 }

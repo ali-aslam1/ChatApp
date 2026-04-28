@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.storage.UploadTask
 import com.gowtham.letschat.models.UserProfile
@@ -15,6 +16,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import java.util.*
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 @HiltViewModel
@@ -35,15 +37,13 @@ class FMyProfileViewModel @Inject constructor(
 
     private val mobileData = userProfile?.mobile
 
-    private val storageRef = UserUtils.getStorageRef(context)
-
-    private val docuRef = UserUtils.getDocumentRef(context)
+    private var docuRef = UserUtils.getDocumentRef(context)
 
     val mobile = MutableLiveData("${mobileData?.country} ${mobileData?.number}")
 
     val profileUpdateState = MutableLiveData<LoadState>()
 
-    private lateinit var uploadTask: UploadTask
+    private var uploadTask: UploadTask? = null
 
     init {
         Timber.v("FMyProfileViewModel init")
@@ -51,6 +51,7 @@ class FMyProfileViewModel @Inject constructor(
     }
 
     private fun fetchLatestProfile() {
+        verifyDocuRef()
         docuRef.get().addOnSuccessListener { document ->
             if (document != null && document.exists()) {
                 val profile = document.toObject(UserProfile::class.java)
@@ -67,29 +68,83 @@ class FMyProfileViewModel @Inject constructor(
         }
     }
 
-    fun uploadProfileImage(imagePath: Uri) {
+    /**
+     * Verifies that the document reference points to the current user's UID.
+     * Updates docuRef if a mismatch is found.
+     */
+    private fun verifyDocuRef() {
+        val currentUid = FirebaseAuth.getInstance().currentUser?.uid
+        if (currentUid != null && docuRef.id != currentUid) {
+            Timber.w("docuRef ID mismatch! Current docuRef.id: ${docuRef.id}, Auth UID: $currentUid. Updating reference.")
+            docuRef = UserUtils.getDocumentRef(context)
+        }
+    }
+
+    fun uploadProfileImage(imagePath: Uri, isRetry: Boolean = false) {
         try {
             isUploading.value = true
-            val child = storageRef.child("profile_picture_${System.currentTimeMillis()}.jpg")
-            if (this::uploadTask.isInitialized && uploadTask.isInProgress)
-                uploadTask.cancel()
+            verifyDocuRef()
+            
+            val storageRef = UserUtils.getStorageRef(context)
+            val fileName = "profile_picture_${System.currentTimeMillis()}.jpg"
+            val child = storageRef.child(fileName)
+
+            Timber.d("Starting profile image upload. Path: ${child.path}")
+
+            uploadTask?.let {
+                if (it.isInProgress) {
+                    Timber.i("Cancelling previous upload task")
+                    it.cancel()
+                }
+            }
+
             uploadTask = child.putFile(imagePath)
-            uploadTask.addOnSuccessListener {
-                child.downloadUrl.addOnCompleteListener { taskResult ->
+            
+            uploadTask?.let { task ->
+                task.addOnSuccessListener {
+                    Timber.d("Image uploaded successfully, fetching download URL...")
+                    
+                    // Add a timeout to the download URL retrieval
+                    child.downloadUrl.addOnCompleteListener { taskResult ->
+                        isUploading.value = false
+                        if (taskResult.isSuccessful) {
+                            val result = taskResult.result
+                            if (result != null) {
+                                val newUrl = result.toString()
+                                imageUrl.value = newUrl
+                                updateProfileData(userName.value ?: "", about.value ?: "", newUrl)
+                            } else {
+                                val errorMsg = "Download URL result is null"
+                                Timber.e(errorMsg)
+                                context.toast(errorMsg)
+                            }
+                        } else {
+                            val errorMsg = taskResult.exception?.message ?: "Failed to get download URL"
+                            Timber.e(taskResult.exception, "Failed to get profile picture download URL for $fileName")
+                            context.toast(errorMsg)
+                        }
+                    }
+                }.addOnFailureListener { e ->
                     isUploading.value = false
-                    if (taskResult.isSuccessful) {
-                        imageUrl.value = taskResult.result.toString()
+                    val errorMsg = e.message ?: "Upload failed"
+                    Timber.e(e, "Profile picture upload failed for $fileName. isRetry: $isRetry")
+                    
+                    if (!isRetry) {
+                        Timber.i("Retrying upload once...")
+                        uploadProfileImage(imagePath, true)
                     } else {
-                        context.toast("Failed to get download URL")
+                        context.toast("$errorMsg. Please try again later.")
                     }
                 }
-            }.addOnFailureListener { e ->
+            } ?: run {
                 isUploading.value = false
-                context.toast(e.message ?: "Upload failed")
+                Timber.e("UploadTask was null after child.putFile(imagePath)")
+                context.toast("Failed to initialize upload")
             }
         } catch (e: Exception) {
             isUploading.value = false
-            e.printStackTrace()
+            Timber.e(e, "Unexpected exception in uploadProfileImage")
+            context.toast("An unexpected error occurred during upload")
         }
     }
 
@@ -100,30 +155,41 @@ class FMyProfileViewModel @Inject constructor(
     private fun updateProfileData(name: String, strAbout: String, image: String) {
         try {
             profileUpdateState.value = LoadState.OnLoading
-            val profile = userProfile ?: return
+            verifyDocuRef()
+            
+            val profile = userProfile ?: UserProfile().apply {
+                uId = FirebaseAuth.getInstance().currentUser?.uid
+                mobile = mobileData
+            }
+            
             profile.userName = name
             profile.about = strAbout
             profile.image = image
             profile.updatedAt = System.currentTimeMillis()
+            
+            Timber.d("Updating Firestore profile document: ${docuRef.id}")
+            
             docuRef.set(profile, SetOptions.merge()).addOnSuccessListener {
                 context.toast("Profile updated!")
                 userProfile = profile
                 preference.saveProfile(profile)
                 profileUpdateState.value = LoadState.OnSuccess()
             }.addOnFailureListener { e ->
+                Timber.e(e, "Firestore profile update failed for UID: ${docuRef.id}")
                 context.toast(e.message ?: "Update failed")
                 profileUpdateState.value = LoadState.OnFailure(e)
             }
         } catch (e: Exception) {
+            Timber.e(e, "Unexpected error in updateProfileData")
             profileUpdateState.value = LoadState.OnFailure(e)
-            e.printStackTrace()
         }
     }
 
     override fun onCleared() {
         super.onCleared()
-        if (this::uploadTask.isInitialized && uploadTask.isInProgress)
-            uploadTask.cancel()
+        uploadTask?.let {
+            if (it.isInProgress) it.cancel()
+        }
     }
 
 }

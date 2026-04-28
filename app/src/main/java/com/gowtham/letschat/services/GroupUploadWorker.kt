@@ -2,6 +2,7 @@ package com.gowtham.letschat.services
 
 import android.content.Context
 import android.net.Uri
+import android.webkit.MimeTypeMap
 import androidx.hilt.work.HiltWorker
 import androidx.work.Worker
 import androidx.work.WorkerParameters
@@ -21,8 +22,9 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import timber.log.Timber
-import java.io.FileInputStream
+import java.io.File
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @HiltWorker
 class GroupUploadWorker @AssistedInject constructor(
@@ -42,31 +44,86 @@ class GroupUploadWorker @AssistedInject constructor(
         val url=params.inputData.getString(Constants.MESSAGE_FILE_URI)!!
         val sourceName=getSourceName(message,url)
         val storageRef=UserUtils.getStorageRef(applicationContext)
-        val child = storageRef.child(
-            "group/${message.to}/$sourceName")
-       val task = if(url.contains(".mp3")) {
-            val stream = FileInputStream(url)  //audio message
-            child.putStream(stream)
-        }else
-            child.putFile(Uri.parse(message.imageMessage?.uri))
+        val child = storageRef.child("group/${message.groupId}/$sourceName")
+            
+        val uri = if (url.startsWith("content://") || url.startsWith("file://")) Uri.parse(url) 
+                  else Uri.fromFile(File(url))
+                  
+        val task = child.putFile(uri)
 
         val countDownLatch = CountDownLatch(1)
         val result= arrayOf(Result.failure())
         task.addOnSuccessListener {
             child.downloadUrl.addOnCompleteListener { taskResult ->
-                Timber.v("TaskResult ${taskResult.result.toString()}")
-                val imgUrl=taskResult.result.toString()
-                sendMessage(message,imgUrl,result,countDownLatch)
-            }.addOnFailureListener { e ->
-                Timber.v("TaskResult Failed ${e.message}")
+                if (taskResult.isSuccessful) {
+                    val downloadUrl = taskResult.result.toString()
+                    sendMessage(message, downloadUrl, result, countDownLatch)
+                } else {
+                    Timber.e("Failed to get download URL for group message: ${taskResult.exception?.message}")
+                    result[0] = Result.failure()
+                    updateFailureStatus(message)
+                    countDownLatch.countDown()
+                }
+            }.addOnFailureListener { exception ->
+                Timber.e(exception, "Failed to get download URL for group message")
                 result[0]= Result.failure()
-                message.status[0]=4
-                dbRepository.insertMessage(message)
+                updateFailureStatus(message)
                 countDownLatch.countDown()
             }
+        }.addOnFailureListener { exception ->
+            Timber.e(exception, "Group file upload to Firebase Storage failed. Path: group/${message.groupId}/")
+            result[0] = Result.failure()
+            updateFailureStatus(message)
+            countDownLatch.countDown()
         }
-        countDownLatch.await()
+        
+        try {
+            if (!countDownLatch.await(60, TimeUnit.SECONDS)) {
+                Timber.w("Group upload timed out after 60 seconds")
+                task.cancel()
+                updateFailureStatus(message)
+                return Result.retry()
+            }
+        } catch (e: InterruptedException) {
+            Timber.e(e, "Group upload interrupted")
+            updateFailureStatus(message)
+            return Result.retry()
+        }
+        
         return result[0]
+    }
+
+    private fun updateFailureStatus(message: GroupMessage) {
+        updateMessageStatus(message, 4)
+        dbRepository.insertMessage(message)
+        
+        try {
+            val groupData = params.inputData.getString(Constants.GROUP_DATA)
+            if (groupData != null) {
+                val group = Json.decodeFromString<Group>(groupData)
+                groupCollection.document(group.id)
+                    .collection("messages")
+                    .document(message.createdAt.toString())
+                    .update(mapOf("status" to arrayListOf(4)))
+                    .addOnSuccessListener {
+                        Timber.d("Group message status updated to 4 in Firestore")
+                    }
+                    .addOnFailureListener { e ->
+                        Timber.e(e, "Failed to update group message status in Firestore")
+                    }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error updating Firestore failure status for group message")
+        }
+    }
+
+    private fun updateMessageStatus(message: GroupMessage, status: Int) {
+        if (message.status.isNotEmpty()) {
+            message.status[0] = status
+        } else {
+            Timber.w("GroupMessage status array was empty, initializing with status $status")
+            message.status = arrayListOf(status)
+        }
     }
 
     private fun sendMessage(
@@ -85,7 +142,7 @@ class GroupUploadWorker @AssistedInject constructor(
 
             override fun onFailed(message: GroupMessage) {
                 result[0]= Result.failure()
-                dbRepository.insertMessage(message)
+                updateFailureStatus(message)
                 countDownLatch.countDown()
             }
         })
@@ -113,9 +170,13 @@ class GroupUploadWorker @AssistedInject constructor(
 
     private fun getSourceName(message: GroupMessage, url: String): String {
         val createdAt=message.createdAt.toString()
-        val num=createdAt.substring(createdAt.length - 5)
-        val extension=url.substring(url.lastIndexOf('.'))
-        return "${message.type}_$num$extension"
+        val num=if (createdAt.length >= 5) createdAt.substring(createdAt.length - 5) else createdAt
+        val uri = Uri.parse(url)
+        val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(
+            applicationContext.contentResolver.getType(uri)) ?: 
+            if (message.type == "audio") "mp3" else "jpg"
+            
+        return "${message.type}_$num.$extension"
     }
 
 }

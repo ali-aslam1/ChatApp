@@ -26,6 +26,7 @@ import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.navigation.NavigationBarView
 import com.gowtham.letschat.R
 import com.gowtham.letschat.core.ChatHandler
+import com.gowtham.letschat.core.GroupChatHandler
 import com.gowtham.letschat.databinding.ActivityMainBinding
 import com.gowtham.letschat.db.data.ChatUser
 import com.gowtham.letschat.db.data.Group
@@ -63,12 +64,16 @@ class MainActivity : ActBase() {
     @Inject
     lateinit var chatHandler: ChatHandler
 
+    @Inject
+    lateinit var groupChatHandler: GroupChatHandler
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = DataBindingUtil.setContentView(this, R.layout.activity_main)
         setSupportActionBar(binding.toolbar)
         if (preference.isLoggedIn()) {
             chatHandler.initHandler()
+            groupChatHandler.initHandler()
         }
     }
 

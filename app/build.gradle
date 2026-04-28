@@ -54,6 +54,13 @@ android {
             res.srcDirs = ['src/main/res']
         }
     }
+
+    packaging {
+        resources {
+            excludes += '/META-INF/DEPENDENCIES'
+            excludes += '/META-INF/INDEX.LIST'
+        }
+    }
 }
 
 dependencies {
@@ -97,9 +104,6 @@ dependencies {
     kapt "androidx.room:room-compiler:$room_version"
     implementation "androidx.room:room-ktx:$room_version"
 
-    //For device to device notification sending
-    implementation 'com.github.a914-gowtham:fcm-sender:1.0.2'
-
     //Lottie
     implementation 'com.airbnb.android:lottie:6.3.0'
 
@@ -132,6 +136,8 @@ dependencies {
     implementation "androidx.work:work-runtime-ktx:$work_version"
     implementation "androidx.datastore:datastore-preferences:1.0.0"
 
+    // Google Auth Library for FCM V1 tokens
+    implementation 'com.google.auth:google-auth-library-oauth2-http:1.21.0'
 
     // Local Unit Tests
     testImplementation "junit:junit:4.13.2"

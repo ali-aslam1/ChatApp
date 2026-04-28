@@ -1,5 +1,15 @@
 {
   "projects": {
-    "default": "letschat-31c80"
-  }
+    "default": "mobile-41ff6"
+  },
+  "targets": {
+    "mobile-41ff6": {
+      "storage": {
+        "default": [
+          "mobile-41ff6.firebasestorage.app"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

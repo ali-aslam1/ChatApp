@@ -19,6 +19,32 @@ class MessageStatusUpdater @Inject constructor(
     private val firebaseFirestore: FirebaseFirestore
 ) {
 
+    /**
+     * Updates message status from 0 (sending) to 1 (sent) in Firestore.
+     */
+    fun updateToSent(messageList: List<Message>, docId: String) {
+        if (docId.isBlank()) return
+        val msgSubCollection = msgCollection.document(docId).collection("messages")
+        val batch = firebaseFirestore.batch()
+        
+        val filterList = messageList.filter { it.status == 1 }
+        
+        if (filterList.isNotEmpty()) {
+            for (message in filterList) {
+                // We use update() instead of set(..., merge()) to ensure the status field is correctly overwritten
+                batch.update(
+                    msgSubCollection.document(message.createdAt.toString()),
+                    "status", 1
+                )
+            }
+            batch.commit().addOnSuccessListener {
+                LogMessage.v("updateToSent: Status updated successfully for ${filterList.size} messages")
+            }.addOnFailureListener { e ->
+                Timber.e(e, "updateToSent: Batch update failed")
+            }
+        }
+    }
+
     fun updateToDelivery(messageList: List<Message>, vararg chatUsers: ChatUser) {
         val batch = firebaseFirestore.batch()
         for (chatUser in chatUsers) {

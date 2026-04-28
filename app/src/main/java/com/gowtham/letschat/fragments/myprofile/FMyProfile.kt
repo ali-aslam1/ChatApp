@@ -35,9 +35,7 @@ class FMyProfile : Fragment(R.layout.f_my_profile) {
 
     private val viewModel: FMyProfileViewModel by viewModels()
 
-    private lateinit var context: Activity
-
-    private var progressView: CustomProgressView? = null
+    private lateinit var progressView: CustomProgressView
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -51,8 +49,7 @@ class FMyProfile : Fragment(R.layout.f_my_profile) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        context = requireActivity()
-        progressView = CustomProgressView(context)
+        progressView = CustomProgressView(requireActivity())
         binding.lifecycleOwner = viewLifecycleOwner
         binding.viewModel = viewModel
         binding.imageProfile.setOnClickListener {
@@ -63,10 +60,10 @@ class FMyProfile : Fragment(R.layout.f_my_profile) {
             val about = viewModel.about.value
             val image=viewModel.imageUrl.value
             when {
-                viewModel.isUploading.value!! -> context.toast("Profile picture is uploading!")
-                newName.isNullOrBlank() -> context.toast("User name can't be empty!")
+                viewModel.isUploading.value!! -> requireContext().toast("Profile picture is uploading!")
+                newName.isNullOrBlank() -> requireContext().toast("User name can't be empty!")
                 else -> {
-                    context.window.decorView.clearFocus()
+                    requireActivity().window.decorView.clearFocus()
                     viewModel.saveChanges(newName,about ?: "" ,image ?: "")
                 }
             }
@@ -81,9 +78,9 @@ class FMyProfile : Fragment(R.layout.f_my_profile) {
     private fun subscribeObservers() {
         viewModel.profileUpdateState.observe(viewLifecycleOwner, {
             if (it is LoadState.OnLoading) {
-                progressView?.show()
+                progressView.show()
             } else
-                progressView?.dismiss()
+                progressView.dismiss()
         })
     }
 
@@ -113,7 +110,7 @@ class FMyProfile : Fragment(R.layout.f_my_profile) {
         if (resultCode == Activity.RESULT_OK) {
             when (requestCode) {
                 ImageUtils.CROP_IMAGE_ACTIVITY_REQUEST_CODE -> onCropResult(data)
-                ImageUtils.FROM_GALLERY, ImageUtils.TAKE_PHOTO -> ImageUtils.cropImage(context, data, true)
+                ImageUtils.FROM_GALLERY, ImageUtils.TAKE_PHOTO -> ImageUtils.cropImage(this, data, true)
             }
         }
     }

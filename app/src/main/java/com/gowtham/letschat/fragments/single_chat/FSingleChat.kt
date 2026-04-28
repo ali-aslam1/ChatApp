@@ -40,6 +40,7 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import timber.log.Timber
+import java.io.File
 import java.io.IOException
 import java.util.*
 import javax.inject.Inject
@@ -152,6 +153,8 @@ class FSingleChat : Fragment(), ItemClickListener,CustomEditText.KeyBoardInputCa
                 val duration=(recordDuration/1000).toInt()
                 if (duration<=1) {
                     requireContext().toast("Nothing is recorded!")
+                    // Delete the small/empty file
+                    if (lastAudioFile.isNotEmpty()) File(lastAudioFile).delete()
                     return@setOnClickListener
                 }
                 val msg=createMessage().apply {
@@ -326,17 +329,9 @@ class FSingleChat : Fragment(), ItemClickListener,CustomEditText.KeyBoardInputCa
             }
         }else if (requestCode == ImageUtils.CROP_IMAGE_ACTIVITY_REQUEST_CODE)
             onCropResult(data)
-        else if (requestCode == ImageUtils.FROM_GALLERY && resultCode == Activity.RESULT_OK) {
-            val imagePath = data?.data
-            if (imagePath != null) {
-                val message = createMessage()
-                message.apply {
-                    type = "image"
-                    imageMessage = ImageMessage(imagePath.toString())
-                    chatUsers = ArrayList()
-                }
-                viewModel.uploadToCloud(message, imagePath.toString())
-            }
+        else if ((requestCode == ImageUtils.FROM_GALLERY || requestCode == ImageUtils.TAKE_PHOTO) 
+            && resultCode == Activity.RESULT_OK) {
+            ImageUtils.cropImage(this, data, true)
         }
     }
 
@@ -389,10 +384,10 @@ class FSingleChat : Fragment(), ItemClickListener,CustomEditText.KeyBoardInputCa
     fun onAttachmentItemClicked(event: BottomSheetEvent){
         when(event.position){
             0->{
-                ImageUtils.takePhoto(requireActivity())
+                ImageUtils.takePhoto(this)
             }
             1->{
-                ImageUtils.chooseGallery(requireActivity())
+                ImageUtils.chooseGallery(this)
             }
             2->{
                 //create intent for gallery video
@@ -404,6 +399,11 @@ class FSingleChat : Fragment(), ItemClickListener,CustomEditText.KeyBoardInputCa
     }
 
     private fun startRecording() {
+        // Re-check permission right before starting
+        if (!Utils.checkPermission(this, Manifest.permission.RECORD_AUDIO, reqCode = REQ_AUDIO_PERMISSION)) {
+            return
+        }
+
         binding.lottieVoice.show()
         binding.lottieVoice.playAnimation()
         binding.viewChatBtm.edtMsg.apply {
@@ -411,44 +411,73 @@ class FSingleChat : Fragment(), ItemClickListener,CustomEditText.KeyBoardInputCa
             hint="Recording..."
         }
         onAudioEvent(EventAudioMsg(true))
-        //name of the file where record will be stored
-        lastAudioFile=
-            "${requireActivity().externalCacheDir?.absolutePath}/audiorecord${System.currentTimeMillis()}.mp3"
+
+        // Use internal cache directory as it's more reliable
+        val cacheDir = requireContext().cacheDir
+        lastAudioFile = File(cacheDir, "audiorecord${System.currentTimeMillis()}.m4a").absolutePath
+        
         recorder = MediaRecorder().apply {
             setAudioSource(MediaRecorder.AudioSource.MIC)
-            setOutputFormat(MediaRecorder.OutputFormat.DEFAULT)
+            // Use MPEG_4 and AAC for better compatibility and smaller file size
+            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             setOutputFile(lastAudioFile)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+            
             try {
                 prepare()
-            } catch (e: IOException) {
-                println("ChatFragment.startRecording${e.message}")
+                start()
+                isRecording=true
+                recordStart = Date().time
+                Timber.d("Recording started: $lastAudioFile")
+            } catch (e: Exception) {
+                Timber.e(e, "MediaRecorder prepare/start failed")
+                requireContext().toast("Failed to start recording")
+                resetRecordingState()
             }
-            start()
-            isRecording=true
-            recordStart = Date().time
         }
+        
         Handler(Looper.getMainLooper()).postDelayed({
-            binding.lottieVoice.pauseAnimation()
-        },800)
+            if (isRecording) binding.lottieVoice.pauseAnimation()
+        }, 800)
     }
 
     private fun stopRecording() {
+        if (!isRecording) return
+
         onAudioEvent(EventAudioMsg(false))
         binding.viewChatBtm.edtMsg.apply {
             isEnabled=true
             hint="Type Something..."
         }
+        
         Handler(Looper.getMainLooper()).postDelayed({
             binding.lottieVoice.resumeAnimation()
         },200)
-        recorder?.apply {
-            stop()
-            release()
+
+        try {
+            recorder?.apply {
+                stop()
+                release()
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "MediaRecorder stop failed")
+        } finally {
             recorder = null
+            isRecording = false
+            recordDuration = Date().time - recordStart
         }
-        isRecording=false
-        recordDuration = Date().time - recordStart
+    }
+
+    private fun resetRecordingState() {
+        isRecording = false
+        recorder?.release()
+        recorder = null
+        binding.lottieVoice.gone()
+        binding.viewChatBtm.edtMsg.apply {
+            isEnabled = true
+            hint = "Type Something..."
+        }
+        onAudioEvent(EventAudioMsg(false))
     }
 
 

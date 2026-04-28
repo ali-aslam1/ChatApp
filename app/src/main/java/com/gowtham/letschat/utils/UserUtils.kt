@@ -7,7 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.ContactsContract
 import android.provider.Settings
-import com.fcmsender.FCMSender
+import com.google.auth.oauth2.GoogleCredentials
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.firestore.CollectionReference
@@ -37,7 +37,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.greenrobot.eventbus.EventBus
 import org.json.JSONObject
 import timber.log.Timber
@@ -56,6 +60,11 @@ object UserUtils {
     const val NOTIFICATION_ID=22
 
     var totalRecursionCount=0
+
+    private val client = OkHttpClient()
+
+    private var accessToken: String? = null
+    private var tokenExpiry: Long = 0
 
     private fun sanitizeNumber(number: String?): String {
         return number?.replace(Regex("[^0-9]"), "") ?: ""
@@ -136,15 +145,41 @@ object UserUtils {
     }
 
     fun getStorageRef(context: Context): StorageReference {
-        val preference = MPreference(context)
-        val ref = Firebase.storage.getReference("Users")
-        return ref.child(preference.getUid().toString())
+        return Firebase.storage.reference.child("Users").child(getValidUid(context))
     }
 
     fun getDocumentRef(context: Context): DocumentReference {
-        val preference = MPreference(context)
         val db = FirebaseFirestore.getInstance()
-        return db.collection("Users").document(preference.getUid()!!)
+        return db.collection("Users").document(getValidUid(context))
+    }
+
+    /**
+     * Ensures UID matches between FirebaseAuth and MPreference.
+     * Throws IllegalStateException if UID cannot be determined.
+     */
+    private fun getValidUid(context: Context): String {
+        val authUid = FirebaseAuth.getInstance().currentUser?.uid
+        val preference = MPreference(context)
+        val prefUid = preference.getUid()
+
+        return when {
+            !authUid.isNullOrEmpty() -> {
+                if (authUid != prefUid) {
+                    Timber.e("UID Mismatch detected! Auth: $authUid, Pref: $prefUid. Syncing preference.")
+                    preference.setUid(authUid)
+                }
+                authUid
+            }
+            !prefUid.isNullOrEmpty() -> {
+                Timber.w("FirebaseAuth UID is null! Falling back to Preference UID: $prefUid")
+                prefUid
+            }
+            else -> {
+                val errorMsg = "UID could not be determined. Both Firebase Auth and Preference UIDs are null or empty."
+                Timber.e(errorMsg)
+                throw IllegalStateException(errorMsg)
+            }
+        }
     }
 
     fun getMessageSubCollectionRef(): Query {
@@ -257,30 +292,72 @@ object UserUtils {
         }
     }
 
-    fun sendPush(context: Context, type: String,body: String, token: String,to: String) {
-        try {
-            val data=JSONObject()
-            val pushData=JSONObject()
-            data.put("type", type)
-            data.put("message_body",body)
-            data.put("to",to)
-            pushData.put("data",data)
-            val push = FCMSender.Builder()
-                .serverKey(Constants.FCM_SERVER_KEY)
-                .setData(pushData)
-                .toTokenOrTopic(token)
-                .responseListener(object : FCMSender.ResponseListener {
-                    override fun onFailure(errorCode: Int,message: String) {
-                        LogMessage.v("notification sent Failed to $token")
-                    }
+    private suspend fun getFCMToken(context: Context): String? {
+        val now = System.currentTimeMillis()
+        if (accessToken != null && now < tokenExpiry) {
+            return accessToken
+        }
 
-                    override fun onSuccess(response: String) {
-                        LogMessage.v("notification sent Successfully to $token")
+        return withContext(Dispatchers.IO) {
+            try {
+                val stream = context.assets.open(Constants.SERVICE_ACCOUNT_FILE)
+                val credentials = GoogleCredentials.fromStream(stream)
+                    .createScoped(listOf("https://www.googleapis.com/auth/firebase.messaging"))
+                credentials.refreshIfExpired()
+                val tokenValue = credentials.accessToken.tokenValue
+                accessToken = tokenValue
+                tokenExpiry = credentials.accessToken.expirationTime.time
+                tokenValue
+            } catch (e: Exception) {
+                Timber.e(e, "Error fetching FCM token from service account")
+                null
+            }
+        }
+    }
+
+    fun sendPush(context: Context, type: String,body: String, token: String,to: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val fcmToken = getFCMToken(context)
+                if (fcmToken == null) {
+                    Timber.e("Could not get FCM access token. Notification not sent.")
+                    return@launch
+                }
+
+                val jsonBody = JSONObject()
+                val message = JSONObject()
+                val data = JSONObject()
+                
+                data.put("type", type)
+                data.put("message_body", body)
+                data.put("to", to)
+                
+                message.put("token", token)
+                message.put("data", data)
+                jsonBody.put("message", message)
+
+                val mediaType = "application/json; charset=utf-8".toMediaType()
+                val requestBody = jsonBody.toString().toRequestBody(mediaType)
+                
+                val url = "https://fcm.googleapis.com/v1/projects/${Constants.FCM_PROJECT_ID}/messages:send"
+                
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("Authorization", "Bearer $fcmToken")
+                    .post(requestBody)
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Timber.e("FCM V1 failed: ${response.code} ${response.message}")
+                        Timber.e("Response body: ${response.body?.string()}")
+                    } else {
+                        LogMessage.v("FCM V1 notification sent successfully to $token")
                     }
-                }).build()
-            push.sendPush(context)
-        } catch (e: Exception) {
-            e.printStackTrace()
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error sending FCM V1 push")
+            }
         }
     }
 
