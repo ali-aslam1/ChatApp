@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <data>
+
+        <variable
+            name="message"
+            type="com.gowtham.letschat.db.data.GroupMessage" />
+
+        <variable
+            name="chatUsers"
+            type="com.gowtham.letschat.db.data.ChatUser[]" />
+
+    </data>
+
+    <LinearLayout
+        style="@style/VView"
+        android:layout_marginTop="5dp"
+        android:layout_marginBottom="5dp">
+
+        <LinearLayout
+            style="@style/WVView"
+            android:layout_marginEnd="90dp"
+            android:paddingStart="5dp"
+            android:paddingTop="5dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="5dp">
+
+            <LinearLayout style="@style/LView">
+
+                <TextView
+                    style="@style/TxtSemiSmallStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:hint="Name"
+                    android:textColor="@color/colorTop"
+                    chatUsers="@{chatUsers}"
+                    message="@{message}"
+                    android:textSize="16sp" />
+
+                <TextView
+                    style="@style/TxtRgStyle"
+                    showUserIdIfNotLocalSaved="@{chatUsers}"
+                    currentMessage="@{message}"
+                    android:textColor="@color/colorDefaultBg"
+                    android:textSize="14sp" />
+
+            </LinearLayout>
+
+            <ImageView
+                loadGroupMsgImage="@{message}"
+                android:layout_width="240dp"
+                android:layout_height="280dp"
+                android:scaleType="centerCrop"
+                android:id="@+id/image_msg" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/txt_msg_time"
+            style="@style/TxtRgStyle"
+            android:layout_marginStart="5dp"
+            showGrpMsgTime="@{message}"
+            android:textSize="16sp" />
+
+    </LinearLayout>
+</layout>
