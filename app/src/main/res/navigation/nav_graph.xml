@@ -8,7 +8,7 @@
     <fragment
         android:id="@+id/FLogIn"
         android:name="com.gowtham.letschat.fragments.login.FLogin"
-        android:label="FLogIn"
+        android:label="Login"
         tools:layout="@layout/f_login">
         <action
             android:id="@+id/action_FLogIn_to_FCountries"
@@ -37,7 +37,7 @@
     <fragment
         android:id="@+id/FCountries"
         android:name="com.gowtham.letschat.fragments.countries.FCountries"
-        android:label="FCountries"
+        android:label="@string/txt_select_coun"
         tools:layout="@layout/f_countries">
         <action
             android:id="@+id/action_FCountries_to_FLogIn"
@@ -47,7 +47,7 @@
     <fragment
         android:id="@+id/FVerify"
         android:name="com.gowtham.letschat.fragments.login.FVerify"
-        android:label="FVerify"
+        android:label="@string/txt_otp_verification"
         tools:layout="@layout/f_verify">
         <action
             android:id="@+id/action_FVerify_to_FProfile"
@@ -60,7 +60,7 @@
     <fragment
         android:id="@+id/FProfile"
         android:name="com.gowtham.letschat.fragments.profile.FProfile"
-        android:label="FProfile"
+        android:label="@string/txt_profile"
         tools:layout="@layout/f_profile">
         <action
             android:id="@+id/action_FProfile_to_FSingleChatHome"
@@ -73,7 +73,7 @@
     <fragment
         android:id="@+id/FSingleChatHome"
         android:name="com.gowtham.letschat.fragments.single_chat_home.FSingleChatHome"
-        android:label="FSingleChatHome"
+        android:label="@string/txt_chats"
         tools:layout="@layout/f_single_chat_home">
         <action
             android:id="@+id/action_FSingleChatHome_to_FContacts"
@@ -90,7 +90,7 @@
     <fragment
         android:id="@+id/FGroupChatHome"
         android:name="com.gowtham.letschat.fragments.group_chat_home.FGroupChatHome"
-        android:label="FGroupChatHome"
+        android:label="@string/txt_group"
         tools:layout="@layout/f_group_chat_home" >
         <action
             android:id="@+id/action_FGroupChatHome_to_FAddGroupMembers"
@@ -102,7 +102,7 @@
     <fragment
         android:id="@+id/FSearch"
         android:name="com.gowtham.letschat.fragments.search.FSearch"
-        android:label="FSearch"
+        android:label="@string/txt_search"
         tools:layout="@layout/f_search" >
         <action
             android:id="@+id/action_FSearch_to_FSingleChat"
@@ -111,12 +111,12 @@
     <fragment
         android:id="@+id/FMyProfile"
         android:name="com.gowtham.letschat.fragments.myprofile.FMyProfile"
-        android:label="FMyProfile"
+        android:label="My Profile"
         tools:layout="@layout/f_my_profile" />
     <fragment
         android:id="@+id/FContacts"
         android:name="com.gowtham.letschat.fragments.contacts.FContacts"
-        android:label="FContacts"
+        android:label="@string/txt_contacts"
         tools:layout="@layout/f_contacts">
         <action
             android:id="@+id/action_FContacts_to_Chat"
@@ -128,7 +128,7 @@
     <fragment
         android:id="@+id/FSingleChat"
         android:name="com.gowtham.letschat.fragments.single_chat.FSingleChat"
-        android:label="FSingleChat"
+        android:label="Chat"
         tools:layout="@layout/f_single_chat" >
         <argument
             android:defaultValue="@null"
@@ -140,7 +140,7 @@
     <fragment
         android:id="@+id/FAddGroupMembers"
         android:name="com.gowtham.letschat.fragments.add_group_members.FAddGroupMembers"
-        android:label="FAddGroupMembers"
+        android:label="@string/txt_add_group_mems"
         tools:layout="@layout/f_add_group_members">
         <action
             android:id="@+id/action_FAddGroupMembers_to_FCreateGroup"
@@ -149,7 +149,7 @@
     <fragment
         android:id="@+id/FCreateGroup"
         android:name="com.gowtham.letschat.fragments.create_group.FCreateGroup"
-        android:label="f_create_group"
+        android:label="Create Group"
         tools:layout="@layout/f_create_group" >
         <argument
             android:name="memberList"
@@ -162,7 +162,7 @@
     <fragment
         android:id="@+id/FGroupChat"
         android:name="com.gowtham.letschat.fragments.group_chat.FGroupChat"
-        android:label="FGroupChat" >
+        android:label="Group" >
 
         <argument
             android:name="group"

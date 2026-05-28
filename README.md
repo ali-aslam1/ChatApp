@@ -53,6 +53,3 @@ LetsChat is a Sample Messaging Android application built to demonstrate the use 
   - [Authentication](https://firebase.google.com/docs/auth) - For Creating account with mobile number.
 - [Kotlin Serializer](https://github.com/Kotlin/kotlinx.serialization) - Convert Specific Classes to and from JSON.Runtime library with core serialization API and support libraries with various serialization formats.
 - [Coil-kt](https://coil-kt.github.io/coil/) - An image loading library for Android backed by Kotlin Coroutines.
-
-
-

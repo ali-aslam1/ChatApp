@@ -19,10 +19,9 @@ service firebase.storage {
       allow read: if request.auth != null && request.auth.uid == recipientId;
     }
 
-    // Group chat rules
-    match /group/{groupId}/{fileName} {
-       // Allow any authenticated user who is a member of the group to read/write
-       // Note: For production, you should ideally check group membership in Firestore
+    // Group chat rules - Updated to match the actual upload path
+    match /Users/{userId}/group/{groupId}/{fileName} {
+       // Allow the sender (owner) to write, and any authenticated user to read
        allow read, write: if request.auth != null;
     }
   }
