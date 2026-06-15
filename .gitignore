@@ -48,3 +48,16 @@ freeline.py
 freeline/
 freeline_project_description.json
 
+# ============================================================
+# SECURITY: Never commit credentials or secret keys
+# ============================================================
+# Firebase / Google Cloud service account keys
+**/assets/service-account.json
+app/src/main/assets/service-account.json
+*service-account*.json
+# Generic secret file patterns
+*.pem
+*.p12
+secrets.json
+secret*.json
+credentials.json
