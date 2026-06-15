@@ -9,9 +9,6 @@ LetsChat is a Sample Messaging Android application built to demonstrate the use 
   - Storage
   - Composite indexes should be created for contact query(link for enabling indexes could be found from logcat while using the app)
 
-***You can Install and test latest LetsChat app from below 👇***
-
-[![LetsChat App](https://img.shields.io/badge/LetsChat-APK-blue.svg?style=for-the-badge&logo=android)](https://github.com/a914-gowtham/LetsChat/blob/master/app/app-debug.apk)
 
 <p float="center">
   <img src="demo_video.gif" />
